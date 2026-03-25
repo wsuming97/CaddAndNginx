@@ -34,6 +34,8 @@ line()  { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━
 # 初始化：前置无交互自动执行
 # ============================================================
 init_env() {
+    echo -e "${CYAN}>>> 正在初始化 Nginx Proxy 环境，请稍候...${NC}"
+
     [ "$(id -u)" -ne 0 ] && die "请使用 root 用户运行此脚本"
 
     # 安装 Docker
@@ -48,9 +50,9 @@ init_env() {
     mkdir -p ${WEB_DIR}/{conf.d,stream.d,certs,html,letsencrypt,log/nginx}
 
     # 同步自身为管理脚本
-    if [ "$0" != "${MANAGE_CMD}" ]; then
-        cp -f "$0" "${MANAGE_CMD}"
-        chmod +x "${MANAGE_CMD}"
+    if [ ! -f "${MANAGE_CMD}" ] || [ "$0" != "${MANAGE_CMD}" ]; then
+        curl -sL https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main/install.sh -o "${MANAGE_CMD}" 2>/dev/null || true
+        chmod +x "${MANAGE_CMD}" 2>/dev/null || true
     fi
 
     # 检查 auto_cert_renewal.sh 是否存在，如果不存在且已安装 Nginx，则生成
