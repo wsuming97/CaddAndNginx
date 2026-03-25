@@ -1,18 +1,22 @@
-# Nginx Docker 一键反代 + 自动 SSL 证书
+# Nginx & Caddy 一键反代 + 自动 SSL 证书
 
-一键部署 Docker 化的 Nginx 反向代理，自动签发和续签 Let's Encrypt SSL 证书。
+一键部署反向代理，自动签发和续签 SSL 证书。提供 **Nginx (Docker)** 和 **Caddy (直装)** 两种方案。
 
-## 功能
+## 方案对比
 
-- 🐳 Docker 化部署，不污染宿主机环境
-- 🔒 自动签发 Let's Encrypt SSL 证书（ECDSA）
-- 🔄 自动续签证书（每天检查，到期前 15 天自动续签）
-- 🌐 支持 HTTP/2、HTTP/3 (QUIC)
-- 🛡️ 默认拦截未绑定域名的请求（返回 444）
-- 📋 交互式管理菜单 + 命令行快捷操作
-- ⚡ 全自动安装，零交互
+| 功能 | Nginx 方案 | Caddy 方案 |
+|------|-----------|-----------|
+| 部署方式 | Docker 容器 | 直接安装到系统 |
+| SSL 证书 | certbot 签发 | 内置自动签发 |
+| 证书续签 | cron 定时任务 | 内置自动续签 |
+| 静态缓存 | ✅ 内置 proxy_cache | ❌ 不支持 |
+| HTTP/3 | ✅ 支持 | ✅ 支持 |
+| WebSocket | ✅ 支持 | ✅ 支持 |
+| 适合场景 | 需要精细控制、静态缓存 | 追求简单省心 |
 
-## 快速开始
+---
+
+## Nginx 方案
 
 ### 安装
 
@@ -20,60 +24,48 @@
 bash <(curl -sL https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main/install.sh)
 ```
 
-### 管理
-
-安装后输入 `nginx-proxy` 进入交互式管理菜单：
-
-```
-╔══════════════════════════════════════════════╗
-║        Nginx Proxy 管理面板                  ║
-╚══════════════════════════════════════════════╝
-
-  操作菜单：
-  1. 添加域名反代
-  2. 删除域名
-  3. 查看域名列表
-  4. 手动续签证书
-  5. 重启 Nginx
-  6. 查看 Nginx 日志
-  7. 更新脚本
-  8. 卸载 Nginx
-  0. 退出
-```
-
-### 命令行快捷操作
+### 使用
 
 ```bash
-nginx-proxy                        # 打开交互式菜单
-nginx-proxy add example.com 8080   # 直接添加域名反代
-nginx-proxy del example.com        # 删除域名
-nginx-proxy list                   # 查看域名列表
-nginx-proxy status                 # 查看服务状态
-nginx-proxy renew                  # 手动续签证书
-nginx-proxy restart                # 重启 Nginx
-nginx-proxy update                 # 更新脚本
-nginx-proxy uninstall              # 卸载
+# 进入菜单
+nginx-proxy
+
+# 或命令行快捷操作
+nginx-proxy add example.com 8080
+nginx-proxy del example.com
+nginx-proxy list
 ```
 
-## 目录结构
+---
 
+## Caddy 方案
+
+### 安装
+
+```bash
+bash <(curl -sL https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main/caddy-install.sh)
 ```
-/home/web/
-├── docker-compose.yml    # Nginx Docker 配置
-├── nginx.conf            # Nginx 主配置
-├── conf.d/               # 站点配置目录
-├── certs/                # SSL 证书目录
-├── html/                 # 静态文件目录
-├── letsencrypt/          # ACME challenge 目录
-├── log/nginx/            # Nginx 日志
-└── stream.d/             # TCP/UDP 流转发配置
+
+### 使用
+
+```bash
+# 进入菜单
+caddy-proxy
+
+# 或命令行快捷操作
+caddy-proxy add example.com 8080
+caddy-proxy del example.com
+caddy-proxy list
 ```
+
+---
 
 ## 要求
 
 - Linux (Debian/Ubuntu 推荐)
 - root 权限
 - 端口 80 和 443 未被占用
+- 域名 A 记录已指向服务器 IP
 
 ## 许可
 
