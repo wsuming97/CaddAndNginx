@@ -16,13 +16,13 @@ CERT_DIR="${WEB_DIR}/certs"
 WEBROOT="${WEB_DIR}/letsencrypt"
 MANAGE_CMD="/usr/local/bin/nginx-proxy"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-BOLD='\033[1m'
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+CYAN=$'\033[0;36m'
+BLUE=$'\033[0;34m'
+NC=$'\033[0m'
+BOLD=$'\033[1m'
 
 info()  { echo -e "${CYAN}>>> $1${NC}"; }
 ok()    { echo -e "${GREEN}✅ $1${NC}"; }
