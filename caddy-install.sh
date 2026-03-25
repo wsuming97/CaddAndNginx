@@ -96,8 +96,9 @@ cmd_install_caddy() {
 import /etc/caddy/sites/*.caddy
 CADDYFILE
 
-    # 创建日志目录
+    # 创建日志目录并设置权限（Caddy 以 caddy 用户运行）
     mkdir -p /var/log/caddy
+    chown -R caddy:caddy /var/log/caddy
 
     # 启动 Caddy
     systemctl enable caddy > /dev/null 2>&1
@@ -172,6 +173,9 @@ ${domain} {
     }
 }
 EOF
+
+    # 确保日志目录权限正确
+    chown -R caddy:caddy /var/log/caddy
 
     info "重载 Caddy..."
     if caddy validate --config "${CADDY_DIR}/Caddyfile" > /dev/null 2>&1; then
