@@ -487,7 +487,7 @@ cmd_list_domains() {
         [ "$name" = "default" ] && continue
         
         local port=$(grep -oP 'server 127\.0\.0\.1:\K[0-9]+' "$conf" 2>/dev/null | head -1)
-        printf "  - %-30s ->  127.0.0.1:%-10s\n" "${CYAN}${name}${NC}" "${port:-?}"
+        echo -e "  - ${CYAN}${name}${NC}  ->  127.0.0.1:${port:-?}"
         count=$((count + 1))
     done
     if [ $count -eq 0 ]; then
