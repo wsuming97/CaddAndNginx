@@ -147,8 +147,8 @@ cmd_install_nginx() {
     openssl rand -out "${CERT_DIR}/ticket12.key" 48 2>/dev/null
     openssl rand -out "${CERT_DIR}/ticket13.key" 80 2>/dev/null
 
-    # nginx.conf
-    if [ ! -f "${WEB_DIR}/nginx.conf" ]; then
+    # nginx.conf - 始终覆盖为最新版本，确保配置完整
+    info "生成 nginx.conf..."
 cat > "${WEB_DIR}/nginx.conf" << 'NGINX_CONF'
 user nginx;
 worker_processes auto;
@@ -204,11 +204,9 @@ http {
 }
 
 stream {
-    # 仅在有配置文件时才 include，避免空目录报错
     include /etc/nginx/stream.d/*.conf;
 }
 NGINX_CONF
-    fi
 
     # default.conf
     if [ ! -f "${CONF_DIR}/default.conf" ]; then
@@ -305,6 +303,16 @@ cmd_add() {
     if ! docker ps --format '{{.Names}}' | grep -q '^nginx$'; then
         error "nginx 容器未运行，请先执行选项 1 安装反代环境"
         return 1
+    fi
+
+    # 自动检查并补全 nginx.conf 中的 proxy_cache_path 配置
+    if ! grep -q "proxy_cache_path" "${WEB_DIR}/nginx.conf" 2>/dev/null; then
+        warn "检测到 nginx.conf 缺少缓存配置，正在自动补全..."
+        sed -i '/include \/etc\/nginx\/conf.d\/\*.conf;/i \
+    proxy_cache_path /var/cache/nginx/proxy levels=1:2 keys_zone=my_proxy_cache:20m max_size=1g inactive=30m;\n    proxy_cache_key "$request_method$host$request_uri$is_args$args$http_accept_encoding";\n    proxy_cache_methods GET HEAD;\n    proxy_cache_valid 200 301 302 304 120m;\n    proxy_cache_valid 404 10m;\n    proxy_cache_valid 500 502 503 504 400 403 429 0;\n    proxy_cache_lock on;\n    proxy_cache_lock_timeout 5s;\n    proxy_cache_background_update on;' "${WEB_DIR}/nginx.conf"
+        docker restart nginx
+        sleep 2
+        ok "缓存配置已自动补全"
     fi
 
     info "创建 HTTP 验证配置..."
