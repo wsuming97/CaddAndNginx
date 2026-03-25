@@ -37,7 +37,16 @@ die()   { error "$1"; exit 1; }
 line() { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
 
 # ============================================================
-# 安装函数
+# 交互式等待用户按回车
+# ============================================================
+pause_step() {
+    echo ""
+    read -p "$(echo -e ${CYAN}按回车继续下一步...${NC})" _pause
+    echo ""
+}
+
+# ============================================================
+# 安装函数（交互式引导）
 # ============================================================
 do_install() {
     echo ""
@@ -46,33 +55,73 @@ do_install() {
     echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════╝${NC}"
     echo ""
 
-    # --- 检查环境 ---
     [ "$(id -u)" -ne 0 ] && die "请使用 root 用户运行此脚本"
 
-    info "[1/6] 检查系统环境..."
+    echo -e "  本脚本将为你完成以下安装步骤："
+    echo ""
+    echo -e "  ${GREEN}Step 1.${NC} 检查系统环境"
+    echo -e "  ${GREEN}Step 2.${NC} 安装 Docker"
+    echo -e "  ${GREEN}Step 3.${NC} 创建目录结构"
+    echo -e "  ${GREEN}Step 4.${NC} 生成 Nginx 配置文件"
+    echo -e "  ${GREEN}Step 5.${NC} 安装管理脚本 (nginx-proxy)"
+    echo -e "  ${GREEN}Step 6.${NC} 配置证书自动续签"
+    echo -e "  ${GREEN}Step 7.${NC} 启动 Nginx 容器"
+    echo ""
+    line
+    read -p "$(echo -e ${CYAN}是否开始安装？[Y/n]: ${NC})" start_confirm
+    if [ "$start_confirm" = "n" ] || [ "$start_confirm" = "N" ]; then
+        echo "已取消安装"
+        exit 0
+    fi
+    echo ""
+
+    # ---- Step 1 ----
+    info "[Step 1/7] 检查系统环境..."
     for port in 80 443; do
         if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
-            warn "端口 ${port} 已被占用，如果是 Nginx 自身占用则忽略"
+            warn "端口 ${port} 已被占用"
+            read -p "$(echo -e ${YELLOW}是否继续？[Y/n]: ${NC})" port_confirm
+            if [ "$port_confirm" = "n" ] || [ "$port_confirm" = "N" ]; then
+                echo "已取消安装"
+                exit 0
+            fi
         fi
     done
+    ok "环境检查通过"
+    pause_step
 
-    # --- 安装 Docker ---
-    info "[2/6] 安装 Docker..."
+    # ---- Step 2 ----
+    info "[Step 2/7] 安装 Docker..."
     if command -v docker &> /dev/null; then
         ok "Docker 已安装：$(docker --version | head -1)"
     else
+        echo -e "  即将安装 Docker..."
+        read -p "$(echo -e ${CYAN}确认安装 Docker？[Y/n]: ${NC})" docker_confirm
+        if [ "$docker_confirm" = "n" ] || [ "$docker_confirm" = "N" ]; then
+            die "Docker 是必要依赖，无法跳过"
+        fi
         curl -fsSL https://get.docker.com | sh
         systemctl enable --now docker
         ok "Docker 安装完成"
     fi
     docker compose version &> /dev/null || die "docker compose 不可用"
+    pause_step
 
-    # --- 创建目录 ---
-    info "[3/6] 创建目录结构..."
+    # ---- Step 3 ----
+    info "[Step 3/7] 创建目录结构..."
     mkdir -p ${WEB_DIR}/{conf.d,stream.d,certs,html,letsencrypt,log/nginx}
+    echo -e "  ${CYAN}${WEB_DIR}/${NC}"
+    echo -e "  ├── conf.d/       站点配置"
+    echo -e "  ├── certs/        SSL 证书"
+    echo -e "  ├── html/         静态文件"
+    echo -e "  ├── letsencrypt/  ACME 验证"
+    echo -e "  ├── log/nginx/    日志"
+    echo -e "  └── stream.d/     TCP/UDP 转发"
+    ok "目录结构已创建"
+    pause_step
 
-    # --- 生成配置文件 ---
-    info "[4/6] 生成默认证书和配置文件..."
+    # ---- Step 4 ----
+    info "[Step 4/7] 生成 Nginx 配置文件..."
 
     # 自签名证书
     if [ ! -f "${CERT_DIR}/default_server.crt" ]; then
@@ -85,7 +134,6 @@ do_install() {
         ok "默认自签名证书已存在，跳过"
     fi
 
-    # TLS Session Ticket Keys
     openssl rand -out "${CERT_DIR}/ticket12.key" 48 2>/dev/null
     openssl rand -out "${CERT_DIR}/ticket13.key" 80 2>/dev/null
 
@@ -203,24 +251,27 @@ COMPOSE
     fi
 
     ok "配置文件就绪"
+    pause_step
 
-    # --- 安装管理脚本 ---
-    info "[5/6] 安装管理脚本..."
+    # ---- Step 5 ----
+    info "[Step 5/7] 安装管理脚本..."
     install_manage_scripts
-    ok "管理脚本已安装"
+    ok "管理命令 nginx-proxy 已安装"
+    pause_step
 
-    # --- 定时任务 ---
-    info "[6/6] 配置定时任务..."
+    # ---- Step 6 ----
+    info "[Step 6/7] 配置证书自动续签..."
     install_cert_renewal
     if ! crontab -l 2>/dev/null | grep -q "auto_cert_renewal"; then
         (crontab -l 2>/dev/null; echo "0 0 * * * ~/auto_cert_renewal.sh >> /var/log/cert_renewal.log 2>&1") | crontab -
-        ok "证书自动续签定时任务已添加（每天 0:00）"
+        ok "定时任务已添加（每天 0:00 自动检查续签）"
     else
-        ok "证书自动续签定时任务已存在"
+        ok "定时任务已存在"
     fi
+    pause_step
 
-    # --- 启动 Nginx ---
-    info "启动 Nginx..."
+    # ---- Step 7 ----
+    info "[Step 7/7] 启动 Nginx..."
     cd ${WEB_DIR} && docker compose up -d
 
     sleep 3
@@ -235,12 +286,20 @@ COMPOSE
     echo -e "${GREEN}${BOLD}  🎉 安装完成！${NC}"
     line
     echo ""
-    echo -e "  管理命令:  ${CYAN}nginx-proxy${NC}"
-    echo -e "  添加域名:  ${CYAN}nginx-proxy add${NC}"
-    echo -e "  删除域名:  ${CYAN}nginx-proxy del${NC}"
-    echo -e "  查看域名:  ${CYAN}nginx-proxy list${NC}"
+    echo -e "  现在你可以："
+    echo -e "  ${GREEN}1.${NC} 进入管理菜单添加域名"
+    echo -e "  ${GREEN}2.${NC} 退出，稍后用 ${CYAN}nginx-proxy${NC} 命令管理"
     echo ""
-    line
+    read -p "$(echo -e ${CYAN}是否立即进入管理菜单？[Y/n]: ${NC})" menu_confirm
+    if [ "$menu_confirm" = "n" ] || [ "$menu_confirm" = "N" ]; then
+        echo ""
+        echo -e "  随时输入 ${CYAN}nginx-proxy${NC} 进入管理菜单"
+        echo ""
+        exit 0
+    fi
+
+    # 进入管理菜单
+    exec ${MANAGE_CMD}
 }
 
 # ============================================================
