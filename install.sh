@@ -4,7 +4,8 @@
 # 作者：wsuming97
 # ============================================================
 
-set -e
+# 注意：不在顶层使用 set -e，避免函数内预期失败的命令中断脚本
+# 各函数内部自行处理错误
 
 # ============================================================
 # 全局变量和颜色
@@ -49,8 +50,8 @@ init_env() {
     # 创建基础目录
     mkdir -p ${WEB_DIR}/{conf.d,stream.d,certs,html,letsencrypt,log/nginx}
 
-    # 同步自身为管理脚本
-    if [ ! -f "${MANAGE_CMD}" ] || [ "$0" != "${MANAGE_CMD}" ]; then
+    # 同步自身为管理脚本（仅当管理脚本不存在时才下载）
+    if [ ! -f "${MANAGE_CMD}" ]; then
         curl -sL https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main/install.sh -o "${MANAGE_CMD}" 2>/dev/null || true
         chmod +x "${MANAGE_CMD}" 2>/dev/null || true
     fi
@@ -203,6 +204,7 @@ http {
 }
 
 stream {
+    # 仅在有配置文件时才 include，避免空目录报错
     include /etc/nginx/stream.d/*.conf;
 }
 NGINX_CONF
@@ -325,7 +327,7 @@ EOF
     sleep 2
 
     info "签发 Let's Encrypt 证书..."
-    docker run --rm \
+    if ! docker run --rm \
         -v "/etc/letsencrypt:/etc/letsencrypt" \
         -v "${WEBROOT}:/var/www/letsencrypt" \
         certbot/certbot certonly \
@@ -335,9 +337,7 @@ EOF
         --agree-tos \
         --register-unsafely-without-email \
         --key-type ecdsa \
-        --cert-name "${domain}"
-
-    if [ $? -ne 0 ]; then
+        --cert-name "${domain}"; then
         error "证书签发失败！请确认该域名的 DNS A 记录已指向本服务器 IP"
         rm -f "${CONF_DIR}/${domain}.conf"
         docker exec nginx nginx -s reload
