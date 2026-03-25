@@ -188,6 +188,17 @@ http {
     ssl_session_ticket_key /etc/nginx/certs/ticket12.key;
     ssl_session_ticket_key /etc/nginx/certs/ticket13.key;
 
+    # 静态文件反代缓存
+    proxy_cache_path /var/cache/nginx/proxy levels=1:2 keys_zone=my_proxy_cache:20m max_size=1g inactive=30m;
+    proxy_cache_key "$request_method$host$request_uri$is_args$args$http_accept_encoding";
+    proxy_cache_methods GET HEAD;
+    proxy_cache_valid 200 301 302 304 120m;
+    proxy_cache_valid 404 10m;
+    proxy_cache_valid 500 502 503 504 400 403 429 0;
+    proxy_cache_lock on;
+    proxy_cache_lock_timeout 5s;
+    proxy_cache_background_update on;
+
     include /etc/nginx/conf.d/*.conf;
 }
 
@@ -382,6 +393,24 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection \$connection_upgrade;
+    }
+
+    # 静态文件缓存：命中后直接从 Nginx 返回，无需回源后端
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|bmp|swf|eot|svg|ttf|woff|woff2|webp)\$ {
+        proxy_pass http://${upstream_name};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_http_version 1.1;
+        proxy_cache my_proxy_cache;                          # 开启缓存
+        proxy_set_header Accept-Encoding "";
+        proxy_set_header Connection "";
+        add_header X-Cache \$upstream_cache_status;          # HIT/MISS 调试用
+        add_header Cache-Control "public, max-age=2592000"; # 浏览器缓存 30 天
+        add_header Alt-Svc 'h3=":443"; ma=86400';           # HTTP/3
+        aio threads;                                         # 异步 IO，加快缓存文件读取
+        log_not_found off;
+        access_log off;
     }
 
     location ^~ /.well-known/acme-challenge/ {
