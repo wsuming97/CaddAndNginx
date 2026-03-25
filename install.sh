@@ -26,13 +26,10 @@ error() { echo -e "${RED}❌ $1${NC}"; exit 1; }
 
 info "[1/6] 检查系统环境..."
 
-# 检查端口占用
+# 检查端口占用（仅警告，不阻断）
 for port in 80 443; do
-    if ss -tlnp | grep -q ":${port} "; then
-        warn "端口 ${port} 已被占用："
-        ss -tlnp | grep ":${port} "
-        read -p "是否继续？(y/N): " confirm
-        [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && exit 1
+    if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+        warn "端口 ${port} 已被占用，如果是 Nginx 自身占用则忽略此警告"
     fi
 done
 
@@ -67,20 +64,23 @@ mkdir -p ${WEB_DIR}/{conf.d,stream.d,certs,html,letsencrypt,log/nginx}
 # ============================================================
 info "[4/6] 生成默认证书和配置文件..."
 
-# 生成自签名证书
+# 生成自签名证书（已存在则跳过）
 if [ ! -f "${WEB_DIR}/certs/default_server.crt" ]; then
     openssl req -x509 -nodes -days 3650 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
         -keyout "${WEB_DIR}/certs/default_server.key" \
         -out "${WEB_DIR}/certs/default_server.crt" \
         -subj "/CN=default_server" 2>/dev/null
     ok "默认自签名证书已生成"
+else
+    ok "默认自签名证书已存在，跳过"
 fi
 
 # 生成 TLS Session Ticket Keys
 openssl rand -out "${WEB_DIR}/certs/ticket12.key" 48 2>/dev/null
 openssl rand -out "${WEB_DIR}/certs/ticket13.key" 80 2>/dev/null
 
-# --- nginx.conf ---
+# --- nginx.conf（已存在则跳过，避免覆盖用户自定义配置）---
+if [ ! -f "${WEB_DIR}/nginx.conf" ]; then
 cat > "${WEB_DIR}/nginx.conf" << 'NGINX_CONF'
 user nginx;
 worker_processes auto;
@@ -130,8 +130,13 @@ stream {
     include /etc/nginx/stream.d/*.conf;
 }
 NGINX_CONF
+    ok "nginx.conf 已生成"
+else
+    ok "nginx.conf 已存在，跳过"
+fi
 
-# --- 默认站点配置 ---
+# --- 默认站点配置（已存在则跳过）---
+if [ ! -f "${WEB_DIR}/conf.d/default.conf" ]; then
 cat > "${WEB_DIR}/conf.d/default.conf" << 'DEFAULT_CONF'
 # 默认站点 - 拦截未绑定域名的请求
 server {
@@ -162,8 +167,13 @@ map $http_upgrade $connection_upgrade {
     ''      "";
 }
 DEFAULT_CONF
+    ok "default.conf 已生成"
+else
+    ok "default.conf 已存在，跳过"
+fi
 
-# --- docker-compose.yml ---
+# --- docker-compose.yml（已存在则跳过，避免覆盖用户的其他服务）---
+if [ ! -f "${WEB_DIR}/docker-compose.yml" ]; then
 cat > "${WEB_DIR}/docker-compose.yml" << 'COMPOSE'
 services:
   nginx:
@@ -182,8 +192,12 @@ services:
     tmpfs:
       - /var/cache/nginx:rw,noexec,nosuid,size=2048m
 COMPOSE
+    ok "docker-compose.yml 已生成"
+else
+    ok "docker-compose.yml 已存在，跳过（如需重置请先删除）"
+fi
 
-ok "配置文件已生成"
+ok "配置文件就绪"
 
 # ============================================================
 # 安装管理脚本
@@ -216,8 +230,7 @@ UPSTREAM_NAME="backend_$(echo $DOMAIN | tr '.-' '_')"
 
 # 检查是否已存在
 if [ -f "${CONF_DIR}/${DOMAIN}.conf" ]; then
-    read -p "域名 ${DOMAIN} 已配置，是否覆盖？(y/N): " confirm
-    [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && exit 0
+    echo -e "${YELLOW}域名 ${DOMAIN} 已配置，将覆盖旧配置${NC}"
 fi
 
 # 检查 nginx 容器是否运行
@@ -240,10 +253,9 @@ server {
 }
 EOF
 docker exec nginx nginx -s reload
-sleep 1
+sleep 2
 
 info "[2/4] 签发 Let's Encrypt 证书..."
-# 使用 Docker 版 certbot，无需宿主机安装
 docker run --rm \
     -v "/etc/letsencrypt:/etc/letsencrypt" \
     -v "${WEBROOT}:/var/www/letsencrypt" \
@@ -256,7 +268,6 @@ docker run --rm \
     --key-type ecdsa \
     --cert-name "${DOMAIN}"
 
-# 复制证书
 cp /etc/letsencrypt/live/${DOMAIN}/fullchain.pem "${CERT_DIR}/${DOMAIN}_cert.pem"
 cp /etc/letsencrypt/live/${DOMAIN}/privkey.pem "${CERT_DIR}/${DOMAIN}_key.pem"
 ok "证书签发成功"
@@ -355,10 +366,7 @@ if [ ! -f "${CONF_DIR}/${DOMAIN}.conf" ]; then
     error "域名 ${DOMAIN} 的配置不存在"
 fi
 
-read -p "确认删除 ${DOMAIN} 的配置和证书？(y/N): " confirm
-[ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && exit 0
-
-info "删除配置和证书..."
+info "删除 ${DOMAIN} 的配置和证书..."
 rm -f "${CONF_DIR}/${DOMAIN}.conf"
 rm -f "${CERT_DIR}/${DOMAIN}_cert.pem"
 rm -f "${CERT_DIR}/${DOMAIN}_key.pem"
@@ -408,8 +416,8 @@ for cert_file in $certs_directory*_cert.pem; do
         docker exec nginx grep -q "letsencrypt" /etc/nginx/conf.d/$yuming.conf 2>/dev/null && CONF_OK=true || CONF_OK=false
 
         echo "--- 自动化环境检测报告 ---"
-        [ "$DIR_OK" = true ] && echo "✅ 目录检测：/var/www/letsencrypt 存在" || echo "❌ 目录检测：/var/www/letsencrypt 不存在"
-        [ "$CONF_OK" = true ] && echo "✅ 配置检测：$yuming.conf 已包含续签规则" || echo "❌ 配置检测：$yuming.conf 未发现 letsencrypt 字样"
+        [ "$DIR_OK" = true ] && echo "✅ 目录：/var/www/letsencrypt 存在" || echo "❌ 目录：/var/www/letsencrypt 不存在"
+        [ "$CONF_OK" = true ] && echo "✅ 配置：$yuming.conf 已包含续签规则" || echo "❌ 配置：$yuming.conf 未发现 letsencrypt 字样"
 
         if [ "$DIR_OK" = true ] && [ "$CONF_OK" = true ]; then
             # webroot 模式续签（不停 nginx）
@@ -480,7 +488,7 @@ fi
 info "启动 Nginx..."
 cd ${WEB_DIR} && docker compose up -d
 
-sleep 2
+sleep 3
 if docker ps --format '{{.Names}}' | grep -q '^nginx$'; then
     ok "Nginx 已成功启动"
 else

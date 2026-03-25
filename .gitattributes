@@ -1,0 +1,2 @@
+# 强制 shell 脚本使用 LF 行尾符
+*.sh text eol=lf
