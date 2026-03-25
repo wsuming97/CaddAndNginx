@@ -9,56 +9,64 @@
 - 🔄 自动续签证书（每天检查，到期前 15 天自动续签）
 - 🌐 支持 HTTP/2、HTTP/3 (QUIC)
 - 🛡️ 默认拦截未绑定域名的请求（返回 444）
-- ⚡ 一键添加域名反代，一条命令搞定
+- 📋 交互式管理菜单 + 命令行快捷操作
+- ⚡ 全自动安装，零交互
 
 ## 快速开始
 
-### 1. 安装 Nginx
+### 安装
 
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main/install.sh)
 ```
 
-### 2. 添加域名反代
+### 管理
 
-先将域名 A 记录指向服务器 IP，DNS 生效后执行：
+安装后输入 `nginx-proxy` 进入交互式管理菜单：
 
-```bash
-add-site example.com 8080
+```
+╔══════════════════════════════════════════════╗
+║        Nginx Proxy 管理面板                  ║
+╚══════════════════════════════════════════════╝
+
+  操作菜单：
+  1. 添加域名反代
+  2. 删除域名
+  3. 查看域名列表
+  4. 手动续签证书
+  5. 重启 Nginx
+  6. 查看 Nginx 日志
+  7. 更新脚本
+  8. 卸载 Nginx
+  0. 退出
 ```
 
-参数说明：
-- 第一个参数：域名
-- 第二个参数：后端服务端口
-
-### 3. 删除域名
+### 命令行快捷操作
 
 ```bash
-del-site example.com
+nginx-proxy                        # 打开交互式菜单
+nginx-proxy add example.com 8080   # 直接添加域名反代
+nginx-proxy del example.com        # 删除域名
+nginx-proxy list                   # 查看域名列表
+nginx-proxy status                 # 查看服务状态
+nginx-proxy renew                  # 手动续签证书
+nginx-proxy restart                # 重启 Nginx
+nginx-proxy update                 # 更新脚本
+nginx-proxy uninstall              # 卸载
 ```
 
 ## 目录结构
-
-安装后的文件结构：
 
 ```
 /home/web/
 ├── docker-compose.yml    # Nginx Docker 配置
 ├── nginx.conf            # Nginx 主配置
 ├── conf.d/               # 站点配置目录
-│   ├── default.conf      # 默认站点（拦截未知域名）
-│   └── example.com.conf  # 域名反代配置（自动生成）
 ├── certs/                # SSL 证书目录
 ├── html/                 # 静态文件目录
 ├── letsencrypt/          # ACME challenge 目录
 ├── log/nginx/            # Nginx 日志
 └── stream.d/             # TCP/UDP 流转发配置
-
-/usr/local/bin/
-├── add-site              # 添加域名脚本
-└── del-site              # 删除域名脚本
-
-~/auto_cert_renewal.sh    # 证书自动续签脚本（cron 每天 0 点执行）
 ```
 
 ## 要求
