@@ -737,32 +737,6 @@ show_menu() {
     echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════╝${NC}"
     echo ""
 
-    # ── 系统信息面板 ──
-    local sys_time
-    sys_time=$(date '+%Y-%m-%d %H:%M:%S')
-    local sys_uptime
-    sys_uptime=$(uptime -p 2>/dev/null | sed 's/^up //' || uptime | awk -F'up ' '{print $2}' | cut -d',' -f1-2)
-    local mem_used mem_total
-    mem_used=$(free -h 2>/dev/null | awk '/^Mem:/{print $3}')
-    mem_total=$(free -h 2>/dev/null | awk '/^Mem:/{print $2}')
-    local disk_used disk_total disk_pct
-    disk_used=$(df -h / 2>/dev/null | awk 'NR==2{print $3}')
-    disk_total=$(df -h / 2>/dev/null | awk 'NR==2{print $2}')
-    disk_pct=$(df -h / 2>/dev/null | awk 'NR==2{print $5}')
-    local sys_ip
-    sys_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-    [ -z "$sys_ip" ] && sys_ip=$(ip addr show 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | cut -d/ -f1 | head -1)
-    local sys_os
-    sys_os=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME}" || uname -sr)
-
-    echo -e "  🕐 ${BOLD}当前时间${NC}:  ${CYAN}${sys_time}${NC}"
-    echo -e "  ⏱️  ${BOLD}运行时间${NC}:  ${CYAN}${sys_uptime}${NC}"
-    echo -e "  💾 ${BOLD}内存使用${NC}:  ${CYAN}${mem_used:-N/A} / ${mem_total:-N/A}${NC}"
-    echo -e "  💿 ${BOLD}磁盘使用${NC}:  ${CYAN}${disk_used:-N/A} / ${disk_total:-N/A} (${disk_pct:-N/A})${NC}"
-    echo -e "  🌐 ${BOLD}IP  地址${NC}:  ${CYAN}${sys_ip:-N/A}${NC}"
-    echo -e "  🖥️  ${BOLD}系统版本${NC}:  ${CYAN}${sys_os:-N/A}${NC}"
-    echo ""
-
     # Docker 状态
     local docker_status=$(get_docker_status)
     case "$docker_status" in
