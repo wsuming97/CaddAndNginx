@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# Nginx & Caddy 统一入口脚本
+# Nginx & Caddy & Docker 统一入口脚本
 # 作者：wsuming97
 # ============================================================
 
@@ -20,20 +20,22 @@ REPO="https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main"
 clear
 echo ""
 echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}${BOLD}║      反向代理一键管理 - 选择方案              ║${NC}"
+echo -e "${GREEN}${BOLD}║        服务器一键管理 - 选择方案              ║${NC}"
 echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 line
-echo -e "  ${GREEN}1.${NC} Nginx 方案  ${CYAN}(Docker + certbot + 静态缓存)${NC}"
-echo -e "  ${GREEN}2.${NC} Caddy 方案  ${CYAN}(直装 + 自动HTTPS + 零配置)${NC}"
+echo -e "  ${GREEN}1.${NC} Nginx 方案    ${CYAN}(Docker + certbot + 静态缓存)${NC}"
+echo -e "  ${GREEN}2.${NC} Caddy 方案    ${CYAN}(直装 + 自动HTTPS + 零配置)${NC}"
+echo -e "  ${GREEN}3.${NC} Docker 管理   ${CYAN}(安装/管理/卸载 Docker & Compose)${NC}"
 line
 echo ""
 echo -e "  ${BOLD}对比：${NC}"
-echo -e "  Nginx → 功能强大，支持静态文件缓存，适合高流量站点"
-echo -e "  Caddy → 极简省心，证书全自动，适合快速部署"
+echo -e "  Nginx  → 功能强大，支持静态文件缓存，适合高流量站点"
+echo -e "  Caddy  → 极简省心，证书全自动，适合快速部署"
+echo -e "  Docker → Docker & Compose 一站式管理"
 echo ""
 
-read -p "请选择方案 [1/2]: " choice
+read -p "请选择方案 [1/2/3]: " choice
 
 case $choice in
     1)
@@ -52,8 +54,16 @@ case $choice in
         chmod +x /usr/local/bin/caddy-proxy
         bash /usr/local/bin/caddy-proxy
         ;;
+    3)
+        echo ""
+        echo -e "${CYAN}>>> 正在启动 Docker 管理...${NC}"
+        # 下载并执行 Docker 管理脚本
+        curl -sL "${REPO}/docker-install.sh" -o /usr/local/bin/docker-manager
+        chmod +x /usr/local/bin/docker-manager
+        bash /usr/local/bin/docker-manager
+        ;;
     *)
-        echo -e "${RED}请输入 1 或 2${NC}"
+        echo -e "${RED}请输入 1、2 或 3${NC}"
         exit 1
         ;;
 esac
