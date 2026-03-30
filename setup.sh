@@ -41,11 +41,11 @@ show_main_menu() {
     disk_used=$(df -h / 2>/dev/null | awk 'NR==2{print $3}')
     disk_total=$(df -h / 2>/dev/null | awk 'NR==2{print $2}')
     disk_pct=$(df -h / 2>/dev/null | awk 'NR==2{print $5}')
-    # 公网 IP：多源降级，超时 3s，全部失败回退内网 IP
+    # 公网 IP：强制 IPv4，多源降级，超时 3s，全部失败回退内网 IP
     local sys_ip
-    sys_ip=$(curl -s --connect-timeout 3 ip.sb 2>/dev/null)
-    [ -z "$sys_ip" ] && sys_ip=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null)
-    [ -z "$sys_ip" ] && sys_ip=$(curl -s --connect-timeout 3 ipinfo.io/ip 2>/dev/null)
+    sys_ip=$(curl -s -4 --connect-timeout 3 ip.sb 2>/dev/null)
+    [ -z "$sys_ip" ] && sys_ip=$(curl -s -4 --connect-timeout 3 icanhazip.com 2>/dev/null)
+    [ -z "$sys_ip" ] && sys_ip=$(curl -s -4 --connect-timeout 3 api.ipify.org 2>/dev/null)
     [ -z "$sys_ip" ] && sys_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     local sys_os
     sys_os=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME}" || uname -sr)
