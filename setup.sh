@@ -41,9 +41,12 @@ show_main_menu() {
     disk_used=$(df -h / 2>/dev/null | awk 'NR==2{print $3}')
     disk_total=$(df -h / 2>/dev/null | awk 'NR==2{print $2}')
     disk_pct=$(df -h / 2>/dev/null | awk 'NR==2{print $5}')
+    # 公网 IP：多源降级，超时 3s，全部失败回退内网 IP
     local sys_ip
-    sys_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-    [ -z "$sys_ip" ] && sys_ip=$(ip addr show 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | cut -d/ -f1 | head -1)
+    sys_ip=$(curl -s --connect-timeout 3 ip.sb 2>/dev/null)
+    [ -z "$sys_ip" ] && sys_ip=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null)
+    [ -z "$sys_ip" ] && sys_ip=$(curl -s --connect-timeout 3 ipinfo.io/ip 2>/dev/null)
+    [ -z "$sys_ip" ] && sys_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     local sys_os
     sys_os=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME}" || uname -sr)
 
@@ -51,7 +54,7 @@ show_main_menu() {
     echo -e "  ⏱️  ${BOLD}运行时间${NC}:  ${CYAN}${sys_uptime}${NC}"
     echo -e "  💾 ${BOLD}内存使用${NC}:  ${CYAN}${mem_used:-N/A} / ${mem_total:-N/A}${NC}"
     echo -e "  💿 ${BOLD}磁盘使用${NC}:  ${CYAN}${disk_used:-N/A} / ${disk_total:-N/A} (${disk_pct:-N/A})${NC}"
-    echo -e "  🌐 ${BOLD}IP  地址${NC}:  ${CYAN}${sys_ip:-N/A}${NC}"
+    echo -e "  🌐 ${BOLD}公网 IP${NC}:  ${CYAN}${sys_ip:-N/A}${NC}"
     echo -e "  🖥️  ${BOLD}系统版本${NC}:  ${CYAN}${sys_os:-N/A}${NC}"
     echo ""
 
