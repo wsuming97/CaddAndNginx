@@ -27,21 +27,22 @@ line
 echo -e "  ${GREEN}1.${NC} Nginx 方案    ${CYAN}(Docker + certbot + 静态缓存)${NC}"
 echo -e "  ${GREEN}2.${NC} Caddy 方案    ${CYAN}(直装 + 自动HTTPS + 零配置)${NC}"
 echo -e "  ${GREEN}3.${NC} Docker 管理   ${CYAN}(安装/管理/卸载 Docker & Compose)${NC}"
+echo -e "  ${GREEN}4.${NC} Docker 迁移   ${CYAN}(备份/传输/还原 Docker 服务)${NC}"
 line
 echo ""
 echo -e "  ${BOLD}对比：${NC}"
 echo -e "  Nginx  → 功能强大，支持静态文件缓存，适合高流量站点"
 echo -e "  Caddy  → 极简省心，证书全自动，适合快速部署"
 echo -e "  Docker → Docker & Compose 一站式管理"
+echo -e "  迁移   → 一键备份旧 VPS 的 Docker 服务迁移到新 VPS"
 echo ""
 
-read -p "请选择方案 [1/2/3]: " choice
+read -p "请选择方案 [1/2/3/4]: " choice
 
 case $choice in
     1)
         echo ""
         echo -e "${CYAN}>>> 正在启动 Nginx 方案...${NC}"
-        # 下载并执行 Nginx 脚本
         curl -sL "${REPO}/install.sh" -o /usr/local/bin/nginx-proxy
         chmod +x /usr/local/bin/nginx-proxy
         bash /usr/local/bin/nginx-proxy
@@ -49,7 +50,6 @@ case $choice in
     2)
         echo ""
         echo -e "${CYAN}>>> 正在启动 Caddy 方案...${NC}"
-        # 下载并执行 Caddy 脚本
         curl -sL "${REPO}/caddy-install.sh" -o /usr/local/bin/caddy-proxy
         chmod +x /usr/local/bin/caddy-proxy
         bash /usr/local/bin/caddy-proxy
@@ -57,13 +57,19 @@ case $choice in
     3)
         echo ""
         echo -e "${CYAN}>>> 正在启动 Docker 管理...${NC}"
-        # 下载并执行 Docker 管理脚本
         curl -sL "${REPO}/docker-install.sh" -o /usr/local/bin/docker-manager
         chmod +x /usr/local/bin/docker-manager
         bash /usr/local/bin/docker-manager
         ;;
+    4)
+        echo ""
+        echo -e "${CYAN}>>> 正在启动 Docker 迁移工具...${NC}"
+        curl -sL "${REPO}/docker-install.sh" -o /usr/local/bin/docker-manager
+        chmod +x /usr/local/bin/docker-manager
+        bash /usr/local/bin/docker-manager migrate
+        ;;
     *)
-        echo -e "${RED}请输入 1、2 或 3${NC}"
+        echo -e "${RED}请输入 1、2、3 或 4${NC}"
         exit 1
         ;;
 esac

@@ -330,20 +330,23 @@ cmd_manage() {
         echo ""
         echo -e "${BOLD}Docker 管理操作：${NC}"
         line
-        echo -e "  ${GREEN}1.${NC} 查看 Docker 状态"
-        echo -e "  ${GREEN}2.${NC} 启动 Docker"
-        echo -e "  ${GREEN}3.${NC} 停止 Docker"
-        echo -e "  ${GREEN}4.${NC} 重启 Docker"
-        echo -e "  ${GREEN}5.${NC} 查看运行中的容器"
-        echo -e "  ${GREEN}6.${NC} 查看所有容器"
-        echo -e "  ${GREEN}7.${NC} 查看镜像列表"
-        echo -e "  ${GREEN}8.${NC} 查看 Docker 日志（最近 50 行）"
-        echo -e "  ${GREEN}9.${NC} 查看 Docker 磁盘占用"
-        echo -e "  ${GREEN}0.${NC} 返回主菜单"
+        echo -e "  ${GREEN} 1.${NC} 查看 Docker 状态"
+        echo -e "  ${GREEN} 2.${NC} 启动 Docker"
+        echo -e "  ${GREEN} 3.${NC} 停止 Docker"
+        echo -e "  ${GREEN} 4.${NC} 重启 Docker"
+        echo -e "  ${GREEN} 5.${NC} 查看运行中的容器"
+        echo -e "  ${GREEN} 6.${NC} 查看所有容器"
+        echo -e "  ${GREEN} 7.${NC} 查看镜像列表"
+        echo -e "  ${GREEN} 8.${NC} 查看 Docker 日志（最近 50 行）"
+        echo -e "  ${GREEN} 9.${NC} 查看 Docker 磁盘占用"
+        echo -e "  ${GREEN}10.${NC} 清理 Docker 系统垃圾"
+        echo -e "  ${GREEN}11.${NC} 修复 Docker 网络"
+        echo -e "  ${GREEN}12.${NC} 自愈 Docker"
+        echo -e "  ${GREEN} 0.${NC} 返回主菜单"
         line
         echo ""
 
-        read -p "请输入数字 [0-9]: " mgmt_choice
+        read -p "请输入数字 [0-12]: " mgmt_choice
         case $mgmt_choice in
             1)
                 echo ""
@@ -409,6 +412,114 @@ cmd_manage() {
                 echo ""
                 info "Docker 磁盘占用："
                 docker system df 2>/dev/null || error "无法获取磁盘信息"
+                ;;
+            10)
+                # 清理 Docker 系统垃圾：分级清理，避免误删
+                echo ""
+                info "清理 Docker 系统垃圾..."
+                echo ""
+                echo -e "  ${GREEN}a.${NC} 普通清理（悬空镜像 + 停止的容器 + 无用网络）"
+                echo -e "  ${YELLOW}b.${NC} 深度清理（普通清理 + 所有未使用的镜像）"
+                echo -e "  ${RED}c.${NC} 完全清理（深度清理 + 未使用的数据卷）${RED}⚠️ 可能丢失数据${NC}"
+                echo ""
+                read -p "选择清理级别 [a/b/c]: " clean_level
+                case "$clean_level" in
+                    a|A)
+                        info "执行普通清理..."
+                        docker system prune -f 2>/dev/null
+                        ok "普通清理完成"
+                        ;;
+                    b|B)
+                        info "执行深度清理..."
+                        docker system prune -af 2>/dev/null
+                        ok "深度清理完成"
+                        ;;
+                    c|C)
+                        read -p "⚠️ 确认删除所有未使用的数据卷？(输入 YES): " vol_confirm
+                        if [ "$vol_confirm" = "YES" ]; then
+                            info "执行完全清理..."
+                            docker system prune -af --volumes 2>/dev/null
+                            ok "完全清理完成"
+                        else
+                            info "已取消"
+                        fi
+                        ;;
+                    *) warn "已取消" ;;
+                esac
+                echo ""
+                info "当前磁盘占用："
+                docker system df 2>/dev/null || true
+                ;;
+            11)
+                # 修复 Docker 网络：清理残留网络 + 重建 docker0 网桥
+                echo ""
+                info "修复 Docker 网络..."
+                warn "将重建 Docker 网络，运行中的容器可能短暂断网"
+                read -p "确认修复？(y/N): " confirm
+                if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+                    info "清理残留网络..."
+                    docker network prune -f 2>/dev/null || true
+                    info "重启 Docker 重建网桥..."
+                    systemctl restart docker
+                    sleep 3
+                    if systemctl is-active --quiet docker; then
+                        ok "Docker 网络已修复"
+                        echo ""
+                        info "当前网络列表："
+                        docker network ls 2>/dev/null
+                    else
+                        error "Docker 重启失败，请手动检查"
+                    fi
+                fi
+                ;;
+            12)
+                # 自愈 Docker：自动重启异常容器（exited + unhealthy）
+                echo ""
+                info "自愈 Docker：检查并重启异常容器..."
+                local healed=0
+
+                # 重启所有 exited 状态的容器
+                local exited_list
+                exited_list=$(docker ps -a --filter "status=exited" --format '{{.Names}}' 2>/dev/null)
+                if [ -n "$exited_list" ]; then
+                    echo -e "  ${YELLOW}发现已退出的容器：${NC}"
+                    echo "$exited_list" | while read -r cname; do
+                        [ -z "$cname" ] && continue
+                        echo -e "    ${YELLOW}${cname}${NC} → 正在重启..."
+                        if docker restart "$cname" > /dev/null 2>&1; then
+                            echo -e "    ${GREEN}✅ ${cname} 已重启${NC}"
+                        else
+                            echo -e "    ${RED}❌ ${cname} 重启失败${NC}"
+                        fi
+                    done
+                    healed=1
+                fi
+
+                # 重启所有 unhealthy 状态的容器
+                local unhealthy_list
+                unhealthy_list=$(docker ps --filter "health=unhealthy" --format '{{.Names}}' 2>/dev/null)
+                if [ -n "$unhealthy_list" ]; then
+                    echo -e "  ${YELLOW}发现不健康的容器：${NC}"
+                    echo "$unhealthy_list" | while read -r cname; do
+                        [ -z "$cname" ] && continue
+                        echo -e "    ${YELLOW}${cname}${NC} → 正在重启..."
+                        if docker restart "$cname" > /dev/null 2>&1; then
+                            echo -e "    ${GREEN}✅ ${cname} 已重启${NC}"
+                        else
+                            echo -e "    ${RED}❌ ${cname} 重启失败${NC}"
+                        fi
+                    done
+                    healed=1
+                fi
+
+                if [ "$healed" -eq 0 ]; then
+                    ok "所有容器状态正常，无需自愈"
+                else
+                    sleep 3
+                    echo ""
+                    ok "自愈完成，当前容器状态："
+                    docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null
+                fi
                 ;;
             0)
                 return 0
@@ -514,6 +625,76 @@ cmd_uninstall() {
 }
 
 # ============================================================
+# 选项 4：Docker 迁移工具
+# 在线拉取 backup.sh / transfer.sh / restore.sh 执行
+# ============================================================
+cmd_migrate() {
+    local REPO="https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main"
+
+    while true; do
+        echo ""
+        echo -e "${BOLD}Docker 迁移工具：${NC}"
+        line
+        echo -e "  ${GREEN}1.${NC} 备份（在旧 VPS 上运行）"
+        echo -e "  ${GREEN}2.${NC} 传输（将备份发送到新 VPS）"
+        echo -e "  ${GREEN}3.${NC} 还原（在新 VPS 上运行）"
+        echo -e "  ${GREEN}0.${NC} 返回主菜单"
+        line
+        echo ""
+        echo -e "  ${BOLD}迁移流程：${NC} 旧VPS备份 → 传输 → 新VPS还原"
+        echo ""
+
+        read -p "请输入数字 [0-3]: " migrate_choice
+        case $migrate_choice in
+            1)
+                echo ""
+                info "下载并运行备份脚本..."
+                curl -sL "${REPO}/backup.sh" -o /tmp/sumingdk-backup.sh 2>/dev/null
+                chmod +x /tmp/sumingdk-backup.sh
+                echo ""
+                echo -e "  ${BOLD}备份模式：${NC}"
+                echo -e "  ${GREEN}a.${NC} 交互模式（选择要备份的服务）"
+                echo -e "  ${GREEN}b.${NC} 全部备份"
+                echo ""
+                read -p "选择模式 [a/b]: " bmode
+                case "$bmode" in
+                    b|B) bash /tmp/sumingdk-backup.sh --all ;;
+                    *)   bash /tmp/sumingdk-backup.sh ;;
+                esac
+                ;;
+            2)
+                echo ""
+                info "下载并运行传输脚本..."
+                curl -sL "${REPO}/transfer.sh" -o /tmp/sumingdk-transfer.sh 2>/dev/null
+                chmod +x /tmp/sumingdk-transfer.sh
+                echo ""
+                read -p "请输入备份文件路径: " bf
+                [ -z "$bf" ] && { error "路径不能为空"; continue; }
+                read -p "请输入目标服务器 IP: " tip
+                [ -z "$tip" ] && { error "IP 不能为空"; continue; }
+                read -p "SSH 端口（默认 22）: " sport
+                [ -z "$sport" ] && sport="22"
+                bash /tmp/sumingdk-transfer.sh "$bf" "$tip" --port "$sport"
+                ;;
+            3)
+                echo ""
+                info "下载并运行还原脚本..."
+                curl -sL "${REPO}/restore.sh" -o /tmp/sumingdk-restore.sh 2>/dev/null
+                chmod +x /tmp/sumingdk-restore.sh
+                echo ""
+                read -p "请输入备份文件路径: " rf
+                [ -z "$rf" ] && { error "路径不能为空"; continue; }
+                bash /tmp/sumingdk-restore.sh "$rf"
+                ;;
+            0) return 0 ;;
+            *) warn "请输入正确的数字"; sleep 1 ;;
+        esac
+        echo ""
+        read -p "$(echo -e ${CYAN}按回车继续...${NC})"
+    done
+}
+
+# ============================================================
 # 交互式主菜单
 # ============================================================
 show_menu() {
@@ -566,7 +747,8 @@ show_menu() {
     echo -e "  ${GREEN}1.${NC} 安装 Docker"
     echo -e "  ${GREEN}2.${NC} 安装 Docker Compose"
     echo -e "  ${GREEN}3.${NC} 管理 Docker & Compose"
-    echo -e "  ${GREEN}4.${NC} 卸载 Docker & Compose"
+    echo -e "  ${GREEN}4.${NC} Docker 迁移工具"
+    echo -e "  ${GREEN}5.${NC} 卸载 Docker & Compose"
     echo -e "  ${GREEN}0.${NC} 退出脚本"
     line
     echo ""
@@ -575,12 +757,13 @@ show_menu() {
 menu_loop() {
     while true; do
         show_menu
-        read -p "请输入数字 [0-4]: " choice
+        read -p "请输入数字 [0-5]: " choice
         case $choice in
             1) cmd_install_docker; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             2) cmd_install_compose; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             3) cmd_manage ;;
-            4) cmd_uninstall; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
+            4) cmd_migrate ;;
+            5) cmd_uninstall; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             0) echo "已退出！随时输入 docker-manager 重新进入菜单。"; exit 0 ;;
             *) warn "请输入正确的数字"; sleep 1 ;;
         esac
@@ -598,6 +781,7 @@ case "$1" in
     install-docker)   cmd_install_docker ;;
     install-compose)  cmd_install_compose ;;
     manage)           cmd_manage ;;
+    migrate)          cmd_migrate ;;
     uninstall)        cmd_uninstall ;;
     status)
         echo ""
