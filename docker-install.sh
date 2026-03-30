@@ -668,7 +668,23 @@ cmd_migrate() {
                 curl -sL "${REPO}/transfer.sh" -o /tmp/sumingdk-transfer.sh 2>/dev/null
                 chmod +x /tmp/sumingdk-transfer.sh
                 echo ""
-                read -p "请输入备份文件路径: " bf
+                # 自动检测最新备份文件
+                local bf=""
+                local latest_backup
+                latest_backup=$(ls -t /tmp/sumingdk-backup-*.tar.gz 2>/dev/null | head -1)
+                if [ -n "$latest_backup" ]; then
+                    local bsize
+                    bsize=$(du -h "$latest_backup" 2>/dev/null | cut -f1)
+                    echo -e "  检测到最新备份: ${CYAN}${latest_backup}${NC} (${bsize})"
+                    read -p "使用此备份？(Y/n): " use_latest
+                    if [ "$use_latest" != "n" ] && [ "$use_latest" != "N" ]; then
+                        bf="$latest_backup"
+                    else
+                        read -p "请输入备份文件路径: " bf
+                    fi
+                else
+                    read -p "请输入备份文件路径: " bf
+                fi
                 [ -z "$bf" ] && { error "路径不能为空"; continue; }
                 read -p "请输入目标服务器 IP: " tip
                 [ -z "$tip" ] && { error "IP 不能为空"; continue; }
@@ -682,7 +698,23 @@ cmd_migrate() {
                 curl -sL "${REPO}/restore.sh" -o /tmp/sumingdk-restore.sh 2>/dev/null
                 chmod +x /tmp/sumingdk-restore.sh
                 echo ""
-                read -p "请输入备份文件路径: " rf
+                # 自动检测最新备份文件
+                local rf=""
+                local latest_restore
+                latest_restore=$(ls -t /tmp/sumingdk-backup-*.tar.gz 2>/dev/null | head -1)
+                if [ -n "$latest_restore" ]; then
+                    local rsize
+                    rsize=$(du -h "$latest_restore" 2>/dev/null | cut -f1)
+                    echo -e "  检测到最新备份: ${CYAN}${latest_restore}${NC} (${rsize})"
+                    read -p "使用此备份？(Y/n): " use_latest
+                    if [ "$use_latest" != "n" ] && [ "$use_latest" != "N" ]; then
+                        rf="$latest_restore"
+                    else
+                        read -p "请输入备份文件路径: " rf
+                    fi
+                else
+                    read -p "请输入备份文件路径: " rf
+                fi
                 [ -z "$rf" ] && { error "路径不能为空"; continue; }
                 bash /tmp/sumingdk-restore.sh "$rf"
                 ;;
@@ -703,6 +735,32 @@ show_menu() {
     echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}${BOLD}║      Docker & Compose 管理菜单               ║${NC}"
     echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    # ── 系统信息面板 ──
+    local sys_time
+    sys_time=$(date '+%Y-%m-%d %H:%M:%S')
+    local sys_uptime
+    sys_uptime=$(uptime -p 2>/dev/null | sed 's/^up //' || uptime | awk -F'up ' '{print $2}' | cut -d',' -f1-2)
+    local mem_used mem_total
+    mem_used=$(free -h 2>/dev/null | awk '/^Mem:/{print $3}')
+    mem_total=$(free -h 2>/dev/null | awk '/^Mem:/{print $2}')
+    local disk_used disk_total disk_pct
+    disk_used=$(df -h / 2>/dev/null | awk 'NR==2{print $3}')
+    disk_total=$(df -h / 2>/dev/null | awk 'NR==2{print $2}')
+    disk_pct=$(df -h / 2>/dev/null | awk 'NR==2{print $5}')
+    local sys_ip
+    sys_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [ -z "$sys_ip" ] && sys_ip=$(ip addr show 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | cut -d/ -f1 | head -1)
+    local sys_os
+    sys_os=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME}" || uname -sr)
+
+    echo -e "  🕐 ${BOLD}当前时间${NC}:  ${CYAN}${sys_time}${NC}"
+    echo -e "  ⏱️  ${BOLD}运行时间${NC}:  ${CYAN}${sys_uptime}${NC}"
+    echo -e "  💾 ${BOLD}内存使用${NC}:  ${CYAN}${mem_used:-N/A} / ${mem_total:-N/A}${NC}"
+    echo -e "  💿 ${BOLD}磁盘使用${NC}:  ${CYAN}${disk_used:-N/A} / ${disk_total:-N/A} (${disk_pct:-N/A})${NC}"
+    echo -e "  🌐 ${BOLD}IP  地址${NC}:  ${CYAN}${sys_ip:-N/A}${NC}"
+    echo -e "  🖥️  ${BOLD}系统版本${NC}:  ${CYAN}${sys_os:-N/A}${NC}"
     echo ""
 
     # Docker 状态
