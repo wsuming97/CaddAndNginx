@@ -275,6 +275,72 @@ cmd_list_domains() {
 }
 
 # ============================================================
+# 选项 6：查看服务端口占用
+# ============================================================
+cmd_ports() {
+    echo ""
+    echo -e "${BOLD}═══════════════════════════════════════════════${NC}"
+    echo -e "${BOLD} 一、系统端口监听总览（所有进程）${NC}"
+    echo -e "${BOLD}═══════════════════════════════════════════════${NC}"
+    echo ""
+
+    # 表头
+    printf "  ${CYAN}%-8s %-28s %-20s${NC}\n" "协议" "监听地址" "进程"
+    echo -e "  ${BLUE}──────── ──────────────────────────── ────────────────────${NC}"
+
+    # 解析 ss 输出，只取 tcp LISTEN 和 udp UNCONN（即监听状态）
+    # 跳过 IPv6 重复行以保持简洁
+    ss -ntulp 2>/dev/null | awk 'NR>1 {
+        proto = $1
+        addr  = $5
+        proc  = $7
+        # 提取进程名
+        match(proc, /users:\(\("([^"]+)"/, m)
+        pname = m[1] ? m[1] : "-"
+        # 只显示 IPv4 行（避免重复）
+        if (addr !~ /^\[/) {
+            printf "  %-8s %-28s %-20s\n", proto, addr, pname
+        }
+    }'
+
+    echo ""
+    echo -e "${BOLD}═══════════════════════════════════════════════${NC}"
+    echo -e "${BOLD} 二、Docker 容器端口映射${NC}"
+    echo -e "${BOLD}═══════════════════════════════════════════════${NC}"
+    echo ""
+
+    if ! command -v docker &>/dev/null; then
+        warn "Docker 未安装，跳过容器端口查询"
+        echo ""
+        return 0
+    fi
+
+    # 检查是否有运行中的容器
+    local running_count=$(docker ps -q 2>/dev/null | wc -l)
+    if [ "$running_count" -eq 0 ]; then
+        echo -e "  ${YELLOW}当前无运行中的 Docker 容器${NC}"
+        echo ""
+        return 0
+    fi
+
+    printf "  ${CYAN}%-22s %-50s${NC}\n" "容器名称" "端口映射"
+    echo -e "  ${BLUE}────────────────────── ──────────────────────────────────────────────────${NC}"
+
+    docker ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null | while IFS=$'\t' read -r name ports; do
+        if [ -z "$ports" ]; then
+            printf "  %-22s ${YELLOW}%-50s${NC}\n" "$name" "(仅内部通信，无对外端口)"
+        else
+            local short_ports=$(echo "$ports" | sed 's/, \[::\]:[0-9]*->[0-9]*\/tcp//g; s/, \[::\]:[0-9]*->[0-9]*\/udp//g')
+            printf "  %-22s %-50s\n" "$name" "$short_ports"
+        fi
+    done
+
+    echo ""
+    echo -e "  ${GREEN}提示${NC}: 地址为 ${CYAN}0.0.0.0:端口${NC} 表示对外开放；仅显示内部端口（如 5432/tcp）表示仅容器间通信"
+    echo ""
+}
+
+# ============================================================
 # 交互式主菜单
 # ============================================================
 show_menu() {
@@ -299,6 +365,7 @@ show_menu() {
     echo -e "  ${GREEN}3.${NC} 删除域名反代"
     echo -e "  ${GREEN}4.${NC} 查看 Caddy 状态与证书"
     echo -e "  ${GREEN}5.${NC} 查看已配置的域名列表"
+    echo -e "  ${GREEN}6.${NC} 查看服务端口占用"
     echo -e "  ${GREEN}0.${NC} 退出脚本"
     line
     echo ""
@@ -307,13 +374,14 @@ show_menu() {
 menu_loop() {
     while true; do
         show_menu
-        read -p "请输入数字 [0-5]: " choice
+        read -p "请输入数字 [0-6]: " choice
         case $choice in
             1) cmd_install_caddy; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             2) cmd_add; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             3) cmd_del; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             4) cmd_status; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             5) echo ""; cmd_list_domains; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
+            6) cmd_ports; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             0) echo "已退出！随时输入 caddy-proxy 重新进入菜单。"; exit 0 ;;
             *) warn "请输入正确的数字"; sleep 1 ;;
         esac
@@ -333,5 +401,6 @@ case "$1" in
     list)    cmd_list_domains ;;
     status)  cmd_status ;;
     install) cmd_install_caddy ;;
+    ports)   cmd_ports ;;
     *)       menu_loop ;;
 esac
