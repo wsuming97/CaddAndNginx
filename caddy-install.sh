@@ -117,6 +117,11 @@ CADDYFILE
     sleep 2
     if systemctl is-active --quiet caddy; then
         ok "Caddy 安装且启动成功！"
+        echo ""
+        read -p "安装完成！是否扫描当前宿主机遗留的 Nginx 配置并尝试导入到 Caddy？(y/N): " do_import
+        if [ "$do_import" = "y" ] || [ "$do_import" = "Y" ]; then
+            cmd_import
+        fi
     else
         error "Caddy 启动失败，请检查日志：journalctl -u caddy --no-pager -n 20"
     fi
@@ -358,6 +363,77 @@ cmd_uninstall_caddy() {
 }
 
 # ============================================================
+# 选项 8：扫描并导入遗留的 Nginx 代理配置
+# ============================================================
+cmd_import() {
+    echo ""
+    info "正在扫描宿主机系统中遗留的 Nginx 配置并尝试转为 Caddy..."
+    echo -e "  扫描目录: ${CYAN}/etc/nginx/conf.d/${NC} 和 ${CYAN}/etc/nginx/sites-enabled/${NC}"
+
+    if ! command -v caddy &>/dev/null; then
+        error "Caddy 未安装，请先执行选项 1 安装环境"
+        return 1
+    fi
+
+    local found_count=0
+    local imported_count=0
+
+    # 扫描 Nginx 常见目录
+    for conf_dir in /etc/nginx/conf.d /etc/nginx/sites-enabled; do
+        [ -d "$conf_dir" ] || continue
+        
+        for f in "$conf_dir"/*; do
+            [ -f "$f" ] || continue
+            
+            # 跳过默认配置
+            local fname=$(basename "$f")
+            if [ "$fname" = "default" ] || [ "$fname" = "default.conf" ]; then
+                continue
+            fi
+
+            # 尝试提取域名和本地转发端口
+            local domain=""
+            local port=""
+            
+            # 提取 server_name 的第一个参数作为主域名
+            domain=$(grep -Eo 'server_name[[:space:]]+[^;[:space:]]+' "$f" | head -1 | awk '{print $2}')
+            # 提取 proxy_pass 后的 127.0.0.1:端口 或 localhost:端口
+            port=$(grep -Eo '(127\.0\.0\.1|localhost):[0-9]+' "$f" | head -1 | grep -Eo '[0-9]+$')
+
+            # 如果既提取到了域名也提取到了端口
+            if [ -n "$domain" ] && [ -n "$port" ]; then
+                # 检查是否已经被 Caddy 纳管
+                if [ -f "${SITES_DIR}/${domain}.caddy" ]; then
+                    continue
+                fi
+
+                found_count=$((found_count + 1))
+                echo ""
+                warn "发现未纳管的遗留 Nginx 配置: ${CYAN}$f${NC}"
+                echo -e "  提取到域名: ${GREEN}${domain}${NC}"
+                echo -e "  提取到反代端口: ${GREEN}${port}${NC}"
+                
+                read -p "是否将其导入到 Caddy 系统？(自动配置 HTTPS) (y/N): " confirm_import
+                if [ "$confirm_import" = "y" ] || [ "$confirm_import" = "Y" ]; then
+                    if cmd_add "$domain" "$port"; then
+                        imported_count=$((imported_count + 1))
+                    fi
+                else
+                    info "已跳过 ${domain}"
+                fi
+            fi
+        done
+    done
+
+    echo ""
+    if [ "$found_count" -eq 0 ]; then
+        ok "未发现任何可以导入的遗留 Nginx 配置！"
+    else
+        ok "扫描结束！共发现 ${found_count} 个遗留配置，成功导入到 Caddy ${imported_count} 个！"
+    fi
+}
+
+# ============================================================
 # 交互式主菜单
 # ============================================================
 show_menu() {
@@ -384,6 +460,7 @@ show_menu() {
     echo -e "  ${GREEN}5.${NC} 查看已配置的域名列表"
     echo -e "  ${GREEN}6.${NC} 查看服务端口占用"
     echo -e "  ${GREEN}7.${NC} 卸载 Caddy"
+    echo -e "  ${GREEN}8.${NC} 扫描导入遗留 Nginx 配置"
     echo -e "  ${GREEN}0.${NC} 退出脚本"
     line
     echo ""
@@ -392,7 +469,7 @@ show_menu() {
 menu_loop() {
     while true; do
         show_menu
-        read -p "请输入数字 [0-7]: " choice
+        read -p "请输入数字 [0-8]: " choice
         case $choice in
             1) cmd_install_caddy; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             2) cmd_add; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
@@ -401,6 +478,7 @@ menu_loop() {
             5) echo ""; cmd_list_domains; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             6) cmd_ports; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             7) cmd_uninstall_caddy; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
+            8) cmd_import; read -p "$(echo -e ${CYAN}按回车继续...${NC})" ;;
             0) echo "已退出！随时输入 caddy-proxy 重新进入菜单。"; exit 0 ;;
             *) warn "请输入正确的数字"; sleep 1 ;;
         esac
@@ -417,6 +495,7 @@ init_env
 case "$1" in
     add)       cmd_add "$2" "$3" ;;
     del)       cmd_del "$2" ;;
+    import)    cmd_import ;;
     list)      cmd_list_domains ;;
     status)    cmd_status ;;
     install)   cmd_install_caddy ;;
