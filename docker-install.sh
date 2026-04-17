@@ -11,21 +11,23 @@
 # 全局变量和颜色
 # ============================================================
 MANAGE_CMD="/usr/local/bin/docker-manager"
+COMMON_LIB="/usr/local/lib/sumingdk/common.sh"
+REPO_BASE="https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main"
 
-RED=$'\033[0;31m'
-GREEN=$'\033[0;32m'
-YELLOW=$'\033[1;33m'
-CYAN=$'\033[0;36m'
-BLUE=$'\033[0;34m'
-NC=$'\033[0m'
-BOLD=$'\033[1m'
-
-info()  { echo -e "${CYAN}>>> $1${NC}"; }
-ok()    { echo -e "${GREEN}✅ $1${NC}"; }
-warn()  { echo -e "${YELLOW}⚠️  $1${NC}"; }
-error() { echo -e "${RED}❌ $1${NC}"; }
-die()   { error "$1"; exit 1; }
-line()  { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
+# 加载公共模块
+if [ -f "$COMMON_LIB" ]; then
+    source "$COMMON_LIB"
+else
+    # Fallback：公共模块不存在时的内联定义
+    RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[1;33m'
+    CYAN=$'\033[0;36m' BLUE=$'\033[0;34m' NC=$'\033[0m' BOLD=$'\033[1m'
+    info()  { echo -e "${CYAN}>>> $1${NC}"; }
+    ok()    { echo -e "${GREEN}✅ $1${NC}"; }
+    warn()  { echo -e "${YELLOW}⚠️  $1${NC}"; }
+    error() { echo -e "${RED}❌ $1${NC}"; }
+    die()   { error "$1"; exit 1; }
+    line()  { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
+fi
 
 # ============================================================
 # 初始化：权限检查 + 同步管理脚本
@@ -35,9 +37,16 @@ init_env() {
 
     [ "$(id -u)" -ne 0 ] && die "请使用 root 用户运行此脚本"
 
+    # 下载公共模块（如不存在）
+    if [ ! -f "$COMMON_LIB" ]; then
+        mkdir -p "$(dirname "$COMMON_LIB")"
+        curl -sL "${REPO_BASE}/common.sh" -o "$COMMON_LIB" 2>/dev/null || true
+        [ -f "$COMMON_LIB" ] && source "$COMMON_LIB"
+    fi
+
     # 同步自身为管理脚本（仅当管理脚本不存在时才下载）
     if [ ! -f "${MANAGE_CMD}" ]; then
-        curl -sL https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main/docker-install.sh -o "${MANAGE_CMD}" 2>/dev/null || true
+        curl -sL "${REPO_BASE}/docker-install.sh" -o "${MANAGE_CMD}" 2>/dev/null || true
         chmod +x "${MANAGE_CMD}" 2>/dev/null || true
     fi
 }
@@ -75,7 +84,7 @@ cmd_install_docker() {
     info "开始安装 Docker..."
 
     if command -v docker &> /dev/null; then
-        local ver=$(docker --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        local ver=$(docker --version 2>/dev/null | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
         ok "Docker 已安装：v${ver}"
         read -p "是否重新安装/更新？(y/N): " confirm
         [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && return 0
@@ -135,7 +144,7 @@ cmd_install_docker() {
 
     sleep 2
     if systemctl is-active --quiet docker; then
-        local ver=$(docker --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        local ver=$(docker --version 2>/dev/null | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
         ok "Docker 已启动：v${ver}"
     else
         error "Docker 启动失败，请检查日志：journalctl -u docker --no-pager -n 20"
@@ -160,7 +169,7 @@ cmd_install_compose() {
 
     # 检查 Compose 插件是否已存在
     if docker compose version &> /dev/null; then
-        local ver=$(docker compose version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        local ver=$(docker compose version 2>/dev/null | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
         ok "Docker Compose 已安装：v${ver}"
         read -p "是否重新安装/更新？(y/N): " confirm
         [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && return 0
@@ -199,7 +208,7 @@ cmd_install_compose() {
 
     # 验证安装结果
     if docker compose version &> /dev/null; then
-        local ver=$(docker compose version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        local ver=$(docker compose version 2>/dev/null | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
         ok "Docker Compose 可用：v${ver}"
     else
         error "Docker Compose 安装失败"
@@ -278,7 +287,7 @@ install_compose_binary() {
 
     # 获取最新版本号
     local latest_ver
-    latest_ver=$(curl -sL "https://api.github.com/repos/docker/compose/releases/latest" | grep '"tag_name"' | grep -oP '\d+\.\d+\.\d+' | head -1)
+    latest_ver=$(curl -sL "https://api.github.com/repos/docker/compose/releases/latest" | grep '"tag_name"' | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
     if [ -z "$latest_ver" ]; then
         warn "无法获取最新版本号，使用 v2.32.4"
         latest_ver="2.32.4"
@@ -354,7 +363,7 @@ cmd_manage() {
                 systemctl status docker --no-pager -l | head -15
                 echo ""
                 if docker compose version &> /dev/null; then
-                    echo -e "  Compose 版本: ${CYAN}$(docker compose version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)${NC}"
+                    echo -e "  Compose 版本: ${CYAN}$(docker compose version 2>/dev/null | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)${NC}"
                 fi
                 ;;
             2)
@@ -629,7 +638,7 @@ cmd_uninstall() {
 # 在线拉取 backup.sh / transfer.sh / restore.sh 执行
 # ============================================================
 cmd_migrate() {
-    local REPO="https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main"
+    local REPO="${REPO_BASE}"
 
     while true; do
         echo ""
@@ -741,7 +750,7 @@ show_menu() {
     local docker_status=$(get_docker_status)
     case "$docker_status" in
         running)
-            local ver=$(docker --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+            local ver=$(docker --version 2>/dev/null | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
             echo -e "  Docker 状态:  ${GREEN}运行中${NC} (v${ver})"
             ;;
         stopped)
@@ -756,11 +765,11 @@ show_menu() {
     local compose_status=$(get_compose_status)
     case "$compose_status" in
         installed)
-            local cver=$(docker compose version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+            local cver=$(docker compose version 2>/dev/null | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
             echo -e "  Compose 状态: ${GREEN}已安装${NC} (v${cver})"
             ;;
         standalone)
-            local cver=$(docker-compose --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+            local cver=$(docker-compose --version 2>/dev/null | grep -o '[0-9]*\.[0-9]*\.[0-9]*' | head -1)
             echo -e "  Compose 状态: ${YELLOW}独立版${NC} (v${cver})"
             ;;
         not_installed)

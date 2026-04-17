@@ -198,7 +198,7 @@ detect_compose_projects() {
             status=$(echo "$line" | sed 's/.*"Status":"\([^"]*\)".*/\1/')
             # 提取容器数（从 "running(2)" 中取出 2）
             local count
-            count=$(echo "$status" | grep -oP '\d+' | head -1)
+            count=$(echo "$status" | grep -o '[0-9]*' | head -1)
             [ -z "$count" ] && count="?"
             echo "${name}|${config_files}|${count}" >> "$COMPOSE_PROJECTS_FILE"
         done
@@ -210,7 +210,7 @@ detect_compose_projects() {
             status=$(echo "$line" | awk '{print $2}')
             config=$(echo "$line" | awk '{print $3}')
             local count
-            count=$(echo "$status" | grep -oP '\d+' | head -1)
+            count=$(echo "$status" | grep -o '[0-9]*' | head -1)
             [ -z "$count" ] && count="?"
             echo "${name}|${config}|${count}" >> "$COMPOSE_PROJECTS_FILE"
         done

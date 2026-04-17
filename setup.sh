@@ -4,19 +4,29 @@
 # 作者：wsuming97
 # ============================================================
 
-RED=$'\033[0;31m'
-GREEN=$'\033[0;32m'
-YELLOW=$'\033[1;33m'
-CYAN=$'\033[0;36m'
-BLUE=$'\033[0;34m'
-NC=$'\033[0m'
-BOLD=$'\033[1m'
+REPO="https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main"
+COMMON_LIB="/usr/local/lib/sumingdk/common.sh"
 
-line() { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
+# 下载并加载公共模块
+if [ ! -f "$COMMON_LIB" ]; then
+    mkdir -p "$(dirname "$COMMON_LIB")"
+    curl -sL "${REPO}/common.sh" -o "$COMMON_LIB" 2>/dev/null || true
+fi
+if [ -f "$COMMON_LIB" ]; then
+    source "$COMMON_LIB"
+else
+    # Fallback：公共模块下载失败时的内联定义
+    RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[1;33m'
+    CYAN=$'\033[0;36m' BLUE=$'\033[0;34m' NC=$'\033[0m' BOLD=$'\033[1m'
+    info()  { echo -e "${CYAN}>>> $1${NC}"; }
+    ok()    { echo -e "${GREEN}✅ $1${NC}"; }
+    warn()  { echo -e "${YELLOW}⚠️  $1${NC}"; }
+    error() { echo -e "${RED}❌ $1${NC}"; }
+    die()   { error "$1"; exit 1; }
+    line()  { echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
+fi
 
 [ "$(id -u)" -ne 0 ] && { echo -e "${RED}❌ 请使用 root 用户运行此脚本${NC}"; exit 1; }
-
-REPO="https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main"
 
 # ============================================================
 # 主菜单（含系统信息面板）
@@ -41,12 +51,17 @@ show_main_menu() {
     disk_used=$(df -h / 2>/dev/null | awk 'NR==2{print $3}')
     disk_total=$(df -h / 2>/dev/null | awk 'NR==2{print $2}')
     disk_pct=$(df -h / 2>/dev/null | awk 'NR==2{print $5}')
-    # 公网 IP：强制 IPv4，多源降级，超时 3s，全部失败显示"获取失败"
-    local sys_ip
-    sys_ip=$(curl -s -4 --connect-timeout 3 ip.sb 2>/dev/null)
-    [ -z "$sys_ip" ] && sys_ip=$(curl -s -4 --connect-timeout 3 icanhazip.com 2>/dev/null)
-    [ -z "$sys_ip" ] && sys_ip=$(curl -s -4 --connect-timeout 3 api.ipify.org 2>/dev/null)
-    [ -z "$sys_ip" ] && sys_ip="获取失败"
+    # 公网 IP：带 10 分钟缓存，避免每次进菜单等 2-3 秒
+    local sys_ip ip_cache="/tmp/.sumingdk_ip_cache"
+    if [ -f "$ip_cache" ] && [ "$(find "$ip_cache" -mmin -10 2>/dev/null)" ]; then
+        sys_ip=$(cat "$ip_cache")
+    else
+        sys_ip=$(curl -s -4 --connect-timeout 3 ip.sb 2>/dev/null)
+        [ -z "$sys_ip" ] && sys_ip=$(curl -s -4 --connect-timeout 3 icanhazip.com 2>/dev/null)
+        [ -z "$sys_ip" ] && sys_ip=$(curl -s -4 --connect-timeout 3 api.ipify.org 2>/dev/null)
+        [ -z "$sys_ip" ] && sys_ip="获取失败"
+        echo "$sys_ip" > "$ip_cache" 2>/dev/null || true
+    fi
     local sys_os
     sys_os=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME}" || uname -sr)
 

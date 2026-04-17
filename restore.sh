@@ -383,7 +383,7 @@ restore_standalone_container() {
 
         # 检查并创建 compose 文件中声明的 external 网络
         local ext_nets
-        ext_nets=$(grep -B1 "external: true" "${target_compose_dir}/docker-compose.yml" 2>/dev/null | grep -oP '^\s+\K\S+(?=:)' || true)
+        ext_nets=$(grep -B1 "external: true" "${target_compose_dir}/docker-compose.yml" 2>/dev/null | grep -v 'external' | sed 's/^[[:space:]]*//' | sed 's/:$//' | grep -v '^$' || true)
         if [ -n "$ext_nets" ]; then
             while IFS= read -r net; do
                 [ -z "$net" ] && continue
@@ -513,7 +513,7 @@ verify_migration() {
                 if [ -n "$ports" ]; then
                     # 提取第一个映射端口
                     local host_port
-                    host_port=$(echo "$ports" | grep -oP '0\.0\.0\.0:\K\d+' | head -1)
+                    host_port=$(echo "$ports" | grep -o '0\.0\.0\.0:[0-9]*' | head -1 | sed 's/0\.0\.0\.0://')
                     if [ -n "$host_port" ]; then
                         local http_code
                         http_code=$(curl -s -o /dev/null -w "%{http_code}" \
