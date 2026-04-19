@@ -38,6 +38,9 @@ MODE="interactive"               # interactive | all
 EXCLUDE_LIST=""                  # 逗号分隔的排除容器名
 DB_BACKUP_MODE="native"          # native | raw
 STOP_BEFORE_BACKUP=false         # 是否在备份前停止容器
+CRON_SCHEDULE=""                 # 定时任务表达式
+KEEP_DAYS=0                      # 历史备份保留天数/份数
+WEBHOOK_URL=""                   # Webhook 通知地址
 
 # 存储检测结果的临时文件
 COMPOSE_PROJECTS_FILE=""
@@ -61,7 +64,14 @@ info()  { echo -e "${CYAN}>>> $1${NC}"; log "INFO" "$1"; }
 ok()    { echo -e "${GREEN}✅ $1${NC}"; log "OK" "$1"; }
 warn()  { echo -e "${YELLOW}⚠️  $1${NC}"; log "WARN" "$1"; }
 error() { echo -e "${RED}❌ $1${NC}"; log "ERROR" "$1"; }
-fatal() { error "$1"; exit 1; }
+fatal() { 
+    error "$1"
+    if [ -n "$WEBHOOK_URL" ]; then
+        local payload="{\"text\": \"❌ 服务器 [${HOSTNAME}] Docker 备份失败\\n时间: $(date '+%Y-%m-%d %H:%M:%S')\\n错误: $1\"}"
+        curl -s -X POST -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL" > /dev/null || true
+    fi
+    exit 1
+}
 
 # 日志记录函数：写入日志文件，带时间戳和级别
 log() {
@@ -103,6 +113,18 @@ parse_args() {
                 STOP_BEFORE_BACKUP=true
                 shift
                 ;;
+            --cron)
+                CRON_SCHEDULE="$2"
+                shift 2
+                ;;
+            --keep)
+                KEEP_DAYS="$2"
+                shift 2
+                ;;
+            --webhook)
+                WEBHOOK_URL="$2"
+                shift 2
+                ;;
             --help|-h)
                 show_help
                 exit 0
@@ -127,6 +149,9 @@ ${BOLD}选项:${NC}
   --raw                    数据库使用文件级备份而非原生导出
   --stop                   备份前先停止容器（保证数据一致性）
   --output /path           指定备份输出目录（默认 /tmp）
+  --cron "表达式"          生成定时任务实现自动备份 (如 "0 3 * * *")
+  --keep N                 自动清理旧文件, 只保留最近 N 份备份包
+  --webhook URL            发送飞书/钉钉等 Webhook 成功或失败通知
   -h, --help               显示此帮助信息
 
 ${BOLD}示例:${NC}
@@ -883,6 +908,72 @@ finalize_backup() {
 }
 
 # ============================================================
+# 备份后清理与通知
+# ============================================================
+post_backup_tasks() {
+    # 1. 自动清理旧备份
+    if [ "$KEEP_DAYS" -gt 0 ] 2>/dev/null; then
+        info "应用备份留存策略：保留最近 $KEEP_DAYS 份"
+        local old_files
+        old_files=$(ls -t "${OUTPUT_DIR}"/sumingdk-backup-*.tar.gz 2>/dev/null | tail -n +$((KEEP_DAYS + 1)))
+        if [ -n "$old_files" ]; then
+            echo "$old_files" | while read -r f; do
+                [ -z "$f" ] && continue
+                rm -f "$f"
+                log "INFO" "已清理旧备份: $f"
+            done
+            ok "旧备份清理完成"
+        else
+            info "没有需要清理的旧备份"
+        fi
+    fi
+
+    # 2. 设置 Cron 定时任务
+    if [ -n "$CRON_SCHEDULE" ]; then
+        info "设置自动定时备份..."
+        local script_path
+        if [[ "$0" == *"/tmp/"* ]] || [ ! -f "$0" ]; then
+            script_path="/usr/local/bin/sumingdk-backup"
+            cp "$0" "$script_path" 2>/dev/null || curl -sL "https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main/backup.sh" -o "$script_path"
+            chmod +x "$script_path"
+        else
+            script_path="$(realpath "$0")"
+        fi
+        
+        local cron_cmd="bash ${script_path} --all"
+        [ -n "$EXCLUDE_LIST" ] && cron_cmd="${cron_cmd} --exclude ${EXCLUDE_LIST}"
+        [ "$DB_BACKUP_MODE" = "raw" ] && cron_cmd="${cron_cmd} --raw"
+        [ "$STOP_BEFORE_BACKUP" = true ] && cron_cmd="${cron_cmd} --stop"
+        [ "$OUTPUT_DIR" != "/tmp" ] && cron_cmd="${cron_cmd} --output \"${OUTPUT_DIR}\""
+        [ "$KEEP_DAYS" -gt 0 ] && cron_cmd="${cron_cmd} --keep ${KEEP_DAYS}"
+        [ -n "$WEBHOOK_URL" ] && cron_cmd="${cron_cmd} --webhook \"${WEBHOOK_URL}\""
+        
+        local tmp_cron
+        tmp_cron=$(mktemp)
+        crontab -l 2>/dev/null | grep -v "# sumingdk auto backup" > "$tmp_cron" || true
+        echo "${CRON_SCHEDULE} ${cron_cmd} > /dev/null 2>&1 # sumingdk auto backup" >> "$tmp_cron"
+        crontab "$tmp_cron"
+        rm -f "$tmp_cron"
+        ok "Cron 定时任务已设置: ${CRON_SCHEDULE}"
+    fi
+
+    # 3. Webhook 通知
+    if [ -n "$WEBHOOK_URL" ]; then
+        info "发送 Webhook 通知..."
+        local final_archive="${OUTPUT_DIR}/${BACKUP_NAME}.tar.gz"
+        local size="Unknown"
+        [ -f "$final_archive" ] && size=$(du -h "$final_archive" | cut -f1)
+        
+        local payload="{\"text\": \"✅ 服务器 [${HOSTNAME}] Docker 备份完成\\n时间: $(date '+%Y-%m-%d %H:%M:%S')\\n文件: ${BACKUP_NAME}.tar.gz\\n大小: ${size}\"}"
+        if curl -s -X POST -H "Content-Type: application/json" -d "$payload" "$WEBHOOK_URL" > /dev/null; then
+            ok "Webhook 通知发送成功"
+        else
+            warn "Webhook 通知发送失败"
+        fi
+    fi
+}
+
+# ============================================================
 # 主流程
 # ============================================================
 main() {
@@ -956,6 +1047,9 @@ EOF
 
     # 6. 生成最终备份包
     finalize_backup
+
+    # 7. 备份后清理与通知
+    post_backup_tasks
 
     # 清理临时文件
     rm -f "$COMPOSE_PROJECTS_FILE" "$STANDALONE_CONTAINERS_FILE" \

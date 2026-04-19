@@ -647,13 +647,15 @@ cmd_migrate() {
         echo -e "  ${GREEN}1.${NC} 备份（在旧 VPS 上运行）"
         echo -e "  ${GREEN}2.${NC} 传输（将备份发送到新 VPS）"
         echo -e "  ${GREEN}3.${NC} 还原（在新 VPS 上运行）"
+        echo -e "  ${GREEN}4.${NC} 配置定时自动备份 (Cron+留存+通知)"
         echo -e "  ${GREEN}0.${NC} 返回主菜单"
         line
         echo ""
         echo -e "  ${BOLD}迁移流程：${NC} 旧VPS备份 → 传输 → 新VPS还原"
+        echo -e "  ${BOLD}定时容灾：${NC} 通过选项 4 可将服务配置为自动每日备份守候"
         echo ""
 
-        read -p "请输入数字 [0-3]: " migrate_choice
+        read -p "请输入数字 [0-4]: " migrate_choice
         case $migrate_choice in
             1)
                 echo ""
@@ -726,6 +728,41 @@ cmd_migrate() {
                 fi
                 [ -z "$rf" ] && { error "路径不能为空"; continue; }
                 bash /tmp/sumingdk-restore.sh "$rf"
+                ;;
+            4)
+                echo ""
+                info "配置定时自动备份..."
+                curl -sL "${REPO}/backup.sh" -o /tmp/sumingdk-backup.sh 2>/dev/null
+                chmod +x /tmp/sumingdk-backup.sh
+                
+                echo -e "  ${GREEN}请选择备份频率：${NC}"
+                echo -e "  1. 每天凌晨 3:00"
+                echo -e "  2. 每周日凌晨 3:00"
+                echo -e "  3. 自定义 Cron 表达式"
+                read -p "选择 [1-3] (默认1): " cron_choice
+                local cron_expr="0 3 * * *"
+                case "$cron_choice" in
+                    2) cron_expr="0 3 * * 0" ;;
+                    3) read -p "输入 Cron 表达式: " cron_expr ;;
+                    *) cron_expr="0 3 * * *" ;;
+                esac
+                [ -z "$cron_expr" ] && cron_expr="0 3 * * *"
+
+                read -p "保留多少天/份的备份？(默认不留存即存所有，建议输入7): " keep_days
+                [ -z "$keep_days" ] && keep_days=0
+
+                read -p "是否发送 Webhook 通知？(如钉钉/飞书) 请输入URL，没有请回车: " webhook_url
+
+                local cmd_args="--all --cron \"${cron_expr}\""
+                local safe_out_dir="/var/backups/sumingdk"
+                mkdir -p "$safe_out_dir"
+                cmd_args="${cmd_args} --output \"${safe_out_dir}\""
+                
+                [ "$keep_days" -gt 0 ] 2>/dev/null && cmd_args="${cmd_args} --keep ${keep_days}"
+                [ -n "$webhook_url" ] && cmd_args="${cmd_args} --webhook \"${webhook_url}\""
+
+                info "正在初始化首次定时配置并生成 Cron 任务..."
+                eval "bash /tmp/sumingdk-backup.sh ${cmd_args}"
                 ;;
             0) return 0 ;;
             *) warn "请输入正确的数字"; sleep 1 ;;
