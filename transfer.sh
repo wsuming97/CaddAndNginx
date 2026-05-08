@@ -356,9 +356,9 @@ cleanup_source() {
                     for dir in "$backup_dir"/standalone/*/; do
                         [ -d "$dir" ] || continue
                         if [ -f "$dir/docker-compose.yml" ]; then
-                            grep -oP '(?<=source: ).*' "$dir/docker-compose.yml" 2>/dev/null | while read -r mount; do
-                                [ -d "$mount" ] && echo -e "  ${CYAN}rm -rf $mount${NC}"
-                            done
+                            grep 'source:' "$dir/docker-compose.yml" 2>/dev/null | sed 's/.*source: *//' | while read -r mount; do
+                                [ -n "$mount" ] && [ -d "$mount" ] && echo -e "  ${CYAN}rm -rf $mount${NC}"
+                            done || true
                         fi
                     done
                     ;;
