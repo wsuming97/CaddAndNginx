@@ -139,6 +139,27 @@ pre_check() {
     echo -e "  传输方式: ${BOLD}${METHOD}${NC}"
     echo -e "  目标目录: ${BOLD}${TARGET_DIR}${NC}"
 
+    # 检查传输工具是否可用（rsync 模式下自动安装或降级）
+    if [ "$METHOD" = "rsync" ]; then
+        if ! command -v rsync &>/dev/null; then
+            warn "rsync 未安装，尝试自动安装..."
+            if command -v apt-get &>/dev/null; then
+                apt-get update -qq && apt-get install -y -qq rsync 2>/dev/null
+            elif command -v yum &>/dev/null; then
+                yum install -y -q rsync 2>/dev/null
+            elif command -v apk &>/dev/null; then
+                apk add --no-cache rsync 2>/dev/null
+            fi
+
+            if command -v rsync &>/dev/null; then
+                ok "rsync 安装成功"
+            else
+                warn "rsync 安装失败，自动降级为 scp 传输"
+                METHOD="scp"
+            fi
+        fi
+    fi
+
     # 检查连通性
     info "检查 SSH 连通性..."
     if ! ssh -p "$SSH_PORT" -o ConnectTimeout=10 -o BatchMode=yes \
@@ -275,6 +296,79 @@ main() {
     echo -e "下一步：登录新服务器执行还原"
     echo -e "  ${CYAN}ssh -p ${SSH_PORT} ${TARGET_USER}@${TARGET_HOST}${NC}"
     echo -e "  ${CYAN}bash restore.sh ${TARGET_DIR}/$(basename "$BACKUP_FILE")${NC}"
+    echo ""
+
+    # 5. 清理源数据（交互式）
+    cleanup_source
+}
+
+# ============================================================
+# 清理源数据
+# ============================================================
+cleanup_source() {
+    echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}迁移后清理（可选）${NC}"
+    echo ""
+    echo -e "  以下数据可在新服务器还原成功后清除："
+    echo -e "  ${CYAN}[1]${NC} 备份文件: ${BACKUP_FILE}"
+    echo ""
+    read -rp "是否清除本机的备份文件？(y/N): " ans
+    case "$ans" in
+        [yY]|[yY][eE][sS])
+            rm -f "$BACKUP_FILE"
+            ok "已删除备份文件: ${BACKUP_FILE}"
+            ;;
+        *)
+            echo -e "  跳过，备份文件保留在: ${BACKUP_FILE}"
+            ;;
+    esac
+
+    # 检测备份中包含的容器，提示是否停止并删除
+    local backup_dir
+    backup_dir="${BACKUP_FILE%.tar.gz}"
+    if [ -d "$backup_dir/standalone" ]; then
+        echo ""
+        echo -e "  检测到已迁移的独立容器："
+        local containers=()
+        for dir in "$backup_dir"/standalone/*/; do
+            [ -d "$dir" ] || continue
+            local name
+            name=$(basename "$dir")
+            containers+=("$name")
+            echo -e "  ${CYAN}-${NC} $name"
+        done
+
+        if [ ${#containers[@]} -gt 0 ]; then
+            echo ""
+            read -rp "是否停止并删除这些已迁移的容器及其数据？(y/N): " ans2
+            case "$ans2" in
+                [yY]|[yY][eE][sS])
+                    for c in "${containers[@]}"; do
+                        if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+                            docker stop "$c" 2>/dev/null
+                            docker rm "$c" 2>/dev/null
+                            ok "已删除容器: $c"
+                        fi
+                    done
+                    echo ""
+                    warn "容器的 Bind Mount 数据目录需要手动确认删除（避免误删）"
+                    echo -e "  请检查以下目录是否需要清理："
+                    for dir in "$backup_dir"/standalone/*/; do
+                        [ -d "$dir" ] || continue
+                        if [ -f "$dir/docker-compose.yml" ]; then
+                            grep -oP '(?<=source: ).*' "$dir/docker-compose.yml" 2>/dev/null | while read -r mount; do
+                                [ -d "$mount" ] && echo -e "  ${CYAN}rm -rf $mount${NC}"
+                            done
+                        fi
+                    done
+                    ;;
+                *)
+                    echo -e "  跳过，容器保留运行"
+                    ;;
+            esac
+        fi
+    fi
+
     echo ""
 }
 
