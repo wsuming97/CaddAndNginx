@@ -94,6 +94,52 @@ curl -sLO https://raw.githubusercontent.com/wsuming97/CaddAndNginx/main/transfer
 bash transfer.sh /tmp/sumingdk-backup-xxx.tar.gz 新IP --port 22
 ```
 
+> **⚠️ 目标服务器未安装 rsync？**
+>
+> 默认传输方式为 rsync（支持断点续传），如果目标服务器未安装 rsync，会报错 `rsync: command not found`。
+> 解决方式（二选一）：
+> ```bash
+> # 方式 1：在目标服务器上安装 rsync（推荐）
+> ssh 新IP "sudo apt-get update -qq && sudo apt-get install -y rsync"    # Debian/Ubuntu
+> ssh 新IP "sudo yum install -y rsync"                                   # CentOS/RHEL
+>
+> # 方式 2：降级为 scp 传输（无需安装额外软件）
+> bash transfer.sh /tmp/sumingdk-backup-xxx.tar.gz 新IP --method scp
+> ```
+
+> **⚠️ 云服务器使用密钥登录（如 AWS / GCP / Azure）？**
+>
+> 云服务器通常不允许密码登录，且默认用户不是 `root`（如 AWS Debian 用 `admin`，Ubuntu 用 `ubuntu`，Amazon Linux 用 `ec2-user`）。
+> 需要先在旧 VPS 上配置 SSH config：
+> ```bash
+> # 1. 将密钥文件传到旧 VPS 上并设置权限
+> chmod 600 /root/.ssh/你的密钥.pem
+>
+> # 2. 配置 SSH 别名
+> cat >> /root/.ssh/config << 'EOF'
+> Host 目标别名
+>     HostName 目标公网IP
+>     User admin          # 改为目标服务器实际用户名
+>     Port 22
+>     IdentityFile /root/.ssh/你的密钥.pem
+>     StrictHostKeyChecking no
+> EOF
+>
+> # 3. 测试连接
+> ssh 目标别名 "echo ok"
+>
+> # 4. 使用别名传输
+> bash transfer.sh /tmp/sumingdk-backup-xxx.tar.gz 目标别名
+> ```
+>
+> | 云服务商 | 默认用户名 |
+> |---------|-----------|
+> | AWS (Debian) | `admin` |
+> | AWS (Ubuntu) | `ubuntu` |
+> | AWS (Amazon Linux) | `ec2-user` |
+> | GCP | 自定义用户名 |
+> | Azure | `azureuser` |
+
 ### 第 3 步：新 VPS 上还原
 
 ```bash
